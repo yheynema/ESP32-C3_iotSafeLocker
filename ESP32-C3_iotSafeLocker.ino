@@ -58,6 +58,9 @@
 #include <esp_wifi.h>
 #include <PubSubClient.h>           // https://github.com/knolleary/pubsubclient (v2.8)
 #include <ArduinoJson.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+#include <ElegantOTA.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <FastLED.h>
@@ -66,7 +69,7 @@
 
 //-----------------------------------------------------------------------
 
-#define _VERSION "0.3.7"
+#define _VERSION "0.4.1"
 
 //--- Definitions -------------------------------------------------------
 #define DEBUG      false
@@ -100,6 +103,8 @@ WiFiMulti wifimulti;
 WiFiClient MQTTClient;
 PubSubClient clientMQTT(MQTTClient);
 TwoWire myI2C(0);
+
+AsyncWebServer server(80);
 
 // GPIO where the DS18B20 is connected to
 const int oneWireBus = ds18b20_data;  
@@ -213,7 +218,16 @@ void setup() {
   clientMQTT.setBufferSize(512);
   clientMQTT.setCallback(mqttCallback);
 
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/plain", "Hi! I am ESP32.");
+  });
+
+  server.begin();
+  
+  ElegantOTA.begin(&server);     // 2
+  
   sendData2Broker(false);
+
 }
 
 void loop() {
@@ -221,6 +235,8 @@ void loop() {
   statusLED.update();
   remLED01.update();
   remLED02.update();
+
+  ElegantOTA.loop();
 
   if (MQTTActivated) clientMQTT.loop();
 
