@@ -9,7 +9,7 @@
                       project connecté.
  *  Fonctionnalités:  Latch électronique, DS18B20, WS2850 RGB LED chip, buzzer,  status LEDs
  *  Notes:  NE PAS Activer le CDC (pourle Serial) car entre en conflit avec le USB et DEL et WS2812B.
- *          Lors de test, ne fat pas brancher avec le USB seulement car étrange comportement de la DEL et WS2812B,
+ *          Lors de test, ne faut pas brancher avec le USB seulement car étrange comportement de la DEL et WS2812B,
  *          car en conflit...  eh! El cheapo!
  *     
  */
@@ -61,6 +61,7 @@
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <ElegantOTA.h>
+#include <ESPmDNS.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <FastLED.h>
@@ -69,7 +70,7 @@
 
 //-----------------------------------------------------------------------
 
-#define _VERSION "0.4.1"
+#define _VERSION "0.4.4"
 
 //--- Definitions -------------------------------------------------------
 #define DEBUG      false
@@ -86,6 +87,8 @@
 #define onBboardLed  19
 #define remLedRed      6   //Rouge
 #define remLedGreen     7   //verte
+
+#define webPortNumber  80
 
 typedef struct {
   char cmd;
@@ -104,7 +107,7 @@ WiFiClient MQTTClient;
 PubSubClient clientMQTT(MQTTClient);
 TwoWire myI2C(0);
 
-AsyncWebServer server(80);
+AsyncWebServer server(webPortNumber);
 
 // GPIO where the DS18B20 is connected to
 const int oneWireBus = ds18b20_data;  
@@ -141,6 +144,8 @@ const char* ntpServer = "ca.pool.ntp.org";
 const long  gmtOffset_sec = 0;
 const int   daylightOffset_sec = 0;
 
+const char* mdnsName = "iotSafeLocker";
+
 const byte myMAC[6] = MY_MAC_ADDR; //Cette séquence sera fournie par l'enseignant
 
 //-----------------------------------------------------------------------
@@ -151,6 +156,7 @@ const byte myMAC[6] = MY_MAC_ADDR; //Cette séquence sera fournie par l'enseigna
 unsigned long msgTimer = 0;
 
 bool MQTTActivated = true;
+bool statusMDNS = false;
 
 uint16_t latchDelay = 750;  //par default
 
@@ -219,7 +225,7 @@ void setup() {
   clientMQTT.setCallback(mqttCallback);
 
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request->send(200, "text/plain", "Hi! I am ESP32.");
+    request->send(200, "text/plain", "Hi! I am iotSafeLocker.");
   });
 
   server.begin();
@@ -227,6 +233,11 @@ void setup() {
   ElegantOTA.begin(&server);     // 2
   
   sendData2Broker(false);
+
+  if (MDNS.begin(mdnsName)) {
+    statusMDNS = true;
+    MDNS.addService("_http", "_tcp", webPortNumber);
+  }
 
 }
 
