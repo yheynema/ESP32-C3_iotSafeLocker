@@ -156,7 +156,7 @@ bool checkMQTT(void) {
           if (mqttRecvCmd.arg1>100 && mqttRecvCmd.arg1<10000)
             delay(mqttRecvCmd.arg1);
           digitalWrite(latch_pin,LOW);
-          retDoc["value"] = latchDelay;
+          retDoc["value"] = mqttRecvCmd.arg1;
         }
         break;
       case 'R':

@@ -3,7 +3,7 @@
  *  Programme:        Safe IoT Locker
  *  Date:             aout 2026
  *  Auteur:           Y. Heynemand
- *  Pltform matériel: ESP32C3 - M5 Stack C3U v3.3.8
+ *  Pltform matériel: M5Stack ESP32C3 - M5 Stamp C3 v3.3.9
  *  Pltform develop : Arduino IDE 2.3.10
  *  Description:      Module de contrôle pour le latch électronique de la boîte.
                       project connecté.
@@ -45,6 +45,7 @@
       - configuration des paramètres (sauvegarde à l'aide de params);
       - configurer l'envoi ou non de msg, délais entre les msg...;
       - UI et méthode pour config du Wifi;
+      - essayer d'utiliser un RFID tag
 */
 //-----------------------------------------------------------------------
 
@@ -70,7 +71,7 @@
 
 //-----------------------------------------------------------------------
 
-#define _VERSION "0.4.4"
+#define _VERSION "0.5.5"
 
 //--- Definitions -------------------------------------------------------
 #define DEBUG      false
