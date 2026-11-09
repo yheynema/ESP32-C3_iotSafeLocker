@@ -46,6 +46,7 @@
       - configurer l'envoi ou non de msg, délais entre les msg...;
       - UI et méthode pour config du Wifi;
       - essayer d'utiliser un RFID tag
+  * v0.6.1: ajouté un procédé de code secret: la userApp doit demander un code, que l'usager convertira en y répondra en tant qu'arg2 lors de la cmd 'L', dans le 60sec imparti.
 */
 //-----------------------------------------------------------------------
 
@@ -71,7 +72,7 @@
 
 //-----------------------------------------------------------------------
 
-#define _VERSION "0.5.5"
+#define _VERSION "0.6.7"
 
 //--- Definitions -------------------------------------------------------
 #define DEBUG      false
@@ -175,6 +176,17 @@ bool mqttReceivedCmd = false;
 
 mqttCMD mqttRecvCmd;
 
+//Secret code related variables
+uint8_t currentRoll = 0;
+uint8_t secretCode = 0;
+bool secretCodeTimeActive = false;
+uint32_t secretCodeTimer = 0;
+const uint32_t secretCodeTimerDelay = 60000; //valide 60 secondes
+
+uint32_t uptimeGlobal = 0;
+uint32_t uptimeTimer  = 0;
+const uint32_t uptimeTimerDelay = 1000;
+
 //-----------------------------------------------------------------------
 
 
@@ -197,6 +209,8 @@ void setup() {
   digitalWrite(latch_pin,LOW);
   
   pinMode(lSense_pin,INPUT);
+
+  randomSeed(analogRead(0));
 
   statusLED.begin();
   remLED01.begin();
@@ -240,6 +254,8 @@ void setup() {
     MDNS.addService("_http", "_tcp", webPortNumber);
   }
 
+  currentRoll = random(255);
+
 }
 
 void loop() {
@@ -261,8 +277,20 @@ void loop() {
 
   unsigned long currentMillis = millis();
 
+  //Timer de validité du code secret d'ouverture.
+  if (secretCodeTimeActive && currentMillis - secretCodeTimer > secretCodeTimerDelay) {
+    secretCodeTimeActive = false;
+  }
+
+  if (currentMillis - uptimeTimer > uptimeTimerDelay) {
+    uptimeTimer = currentMillis;
+    uptimeGlobal++;
+  }
+
   if (currentMillis - previousMillis >= interval) {
     previousMillis = currentMillis;
+
+    currentRoll = random(255);  //Détermine une valeur au hasard.
 
     // Envoie la commande de mesure de température à tous les capteurs sur le bus
     sensors.requestTemperatures(); 

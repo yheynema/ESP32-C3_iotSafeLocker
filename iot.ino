@@ -1,4 +1,4 @@
-const char cmdList[]={'T','L','R','W','B'};
+const char cmdList[]={'T','L','R','W','B','C'};
 
 bool checkValidCmd(char cmd) {
   bool retCode = false;
@@ -55,6 +55,7 @@ bool sendData2Broker(bool dryMode=false) {
     data["TMP"] = temperatureCourante;
     data["LP"] = loopCount;
     data["DOLC"] = doorOpenLoopCount;
+    data["upt"] = uptimeGlobal;
     data["rssi"] = WiFi.RSSI(); //Suivi du niveau Wifi
 
     char buffer[256];
@@ -135,6 +136,19 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   }
 }
 
+String toBinary8(uint8_t value) {
+  String binaryString = "";
+  for (int i = 7; i >= 0; i--) {
+    // On décale 'value' de 'i' vers la droite et on isole le bit le plus à droite (& 1)
+    if ((value >> i) & 1) {
+      binaryString += "1";
+    } else {
+      binaryString += "0";
+    }
+  }
+  return binaryString;
+}
+
 bool checkMQTT(void) {
   bool retCode = false;
 
@@ -149,14 +163,26 @@ bool checkMQTT(void) {
         //envoie Temperature
         retDoc["value"] = temperatureCourante;
         break;
+      case 'C':
+        //userApp requests a code
+        secretCode = currentRoll;
+        retDoc["secretCode"] = toBinary8(currentRoll);
+        secretCodeTimeActive = true;
+        secretCodeTimer = millis();
+        break;
       case 'L':
         //active le Latch
-        if (digitalRead(lSense_pin)==LOW) {
-          digitalWrite(latch_pin,HIGH);
-          if (mqttRecvCmd.arg1>100 && mqttRecvCmd.arg1<10000)
-            delay(mqttRecvCmd.arg1);
-          digitalWrite(latch_pin,LOW);
-          retDoc["value"] = mqttRecvCmd.arg1;
+        if (digitalRead(lSense_pin)==LOW) {  //go only if not already openned
+          if (mqttRecvCmd.arg2 == secretCode && secretCodeTimeActive) { //si le bon code d'ouverture a été fourni
+            digitalWrite(latch_pin,HIGH);
+            if (mqttRecvCmd.arg1>100 && mqttRecvCmd.arg1<1000)
+              delay(mqttRecvCmd.arg1);
+            digitalWrite(latch_pin,LOW);
+            secretCodeTimeActive = false; //invalide le code d'ouverture
+            retDoc["value"] = mqttRecvCmd.arg1;
+            retDoc["code"] = "OK";
+            retDoc["remainTime"] = millis()-secretCodeTimer;
+          } else {retDoc["code"] = "NOTOK";secretCodeTimeActive = false;}  //invalide le code courant: si tu le manques, meme dans les temps, too bad, recommence!
         }
         break;
       case 'R':

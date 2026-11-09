@@ -18,7 +18,7 @@
             padding: 20px;
         }
 
-        textarea {
+        #jsonMessage {
             width: 100%;
             height: 150px;
             box-sizing: border-box;
@@ -47,8 +47,8 @@
 
     <h1>MQTT JSON Sender</h1>
 
-    <textarea id="jsonMessage">{"recipient" : "DeviceIoTLock", "cmd" : "B", "replyTo" : "iotSafeLock/data", "arg1" : "1750"}</textarea>
-	Note: cmd: L activer le latch, B:buzzer, T:temperature, R:door status, W:WS2812B
+    <textarea id="jsonMessage">{"recipient" : "DeviceIoTLock", "cmd" : "B", "replyTo" : "iotSafeLock/data", "arg1" : 550}</textarea>
+	Note: cmd: C:code secret, L:activer le latch, B:buzzer, T:temperature, R:door status, W:WS2812B<p>
 
     <button onclick="connectMQTT()">Connect</button>
 
@@ -63,6 +63,9 @@
 	<h3>Received MQTT Messages</h3>
 
     <div id="messages"></div>
+	
+	
+	<h3>Secret code:</h3><textarea id="secretCode" rows="2" cols="12" readonly maxlength="12"></textarea>
 
 
     <script>
@@ -116,7 +119,6 @@
                 clientId
             );
 
-
             // Connection lost callback
 
             mqttClient.onConnectionLost = function (responseObject) {
@@ -167,6 +169,28 @@
 						receivedMessages.shift();
 					} 
 					updateMessageDisplay();
+					
+					try {
+					   
+						const data = typeof message.payloadString === 'string' ? JSON.parse(message.payloadString) : messageRecu;
+
+						// Vérifie si la propriété "secretCode" existe dans l'objet JSON
+						if (data && Object.prototype.hasOwnProperty.call(data, 'secretCode')) {
+							const secretCode = data.secretCode;
+
+							// Sélectionne l'élément de la page web
+							const elementCible = document.getElementById('secretCode');
+
+							// Inscrit le code secret dans l'élément
+							if (elementCible) {
+								elementCible.textContent = secretCode;
+							}
+						}
+					}
+					catch (error) {
+						alert("Received Invalid JSON message.");
+						return;
+					}
 
                 };
 
@@ -203,9 +227,14 @@
                                 document.getElementById("status").innerText =
                                     "Connected - subscribed to " +
                                     MQTT_SUBSCRIBE_TOPIC;
-
+									
+								//Générer et envoyer un msg de confirmation de présence du client:
+								const sendSubscribeConfirmation = {"recipient" : "DeviceIoTLock", "cmd" : "I", "replyTo" : "iotSafeLock/data", "arg1" : clientId};
+								const message = new Paho.MQTT.Message(sendSubscribeConfirmation);
+								message.destinationName = MQTT_TOPIC;
+								mqttClient.send(message);
                             },
-
+			
                             onFailure: function (error) {
 
                                 console.error(
