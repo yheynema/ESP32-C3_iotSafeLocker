@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contrôleur IoT Safe Lock</title>
+
+    <!-- Eclipse Paho MQTT JavaScript library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.js" type="text/javascript"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 550px;
+            margin: 30px auto;
+            padding: 20px;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            color: #2c3e50;
+            text-align: center;
+        }
+
+        .card {
+            background: #fff;
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-top: 10px;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        select, input[type="text"], button {
+            width: 100%;
+            padding: 10px;
+            margin-top: 5px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .row {
+            display: flex;
+            gap: 10px;
+        }
+
+        .row > div {
+            flex: 1;
+        }
+
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 15px;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        .btn-secondary {
+            background-color: #6c757d;
+        }
+        .btn-secondary:hover {
+            background-color: #5a6268;
+        }
+
+        #status {
+            font-size: 0.9rem;
+            padding: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+            text-align: center;
+            margin-top: 10px;
+        }
+
+        #timerDisplay {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #d9534f;
+            text-align: center;
+            margin-top: 10px;
+        }
+
+        #messages { 
+            width: 100%; 
+            height: 180px; 
+            box-sizing: border-box; 
+            border: 1px solid #ccc; 
+            border-radius: 4px; 
+            background: #fff; 
+            padding: 10px; 
+            overflow-y: auto; 
+            font-family: monospace; 
+            font-size: 12px; 
+            white-space: pre-wrap; 
+        }
+
+        textarea#secretCode {
+            width: 100%;
+            height: 40px;
+            resize: none;
+            font-size: 16px;
+            font-weight: bold;
+            text-align: center;
+            background: #eef9ff;
+            color: #0056b3;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Contrôleur Coffre-Fort MQTT</h1>
+
+    <!-- Connexion -->
+    <div class="card">
+        <button onclick="connectMQTT()">Connexion au Broker MQTT</button>
+        <div id="status">Déconnecté</div>
+    </div>
+
+    <!-- Panneau de Contrôle -->
+    <div class="card">
+        <h3>Envoyer une Commande</h3>
+        
+        <label for="commandSelect">Option de commande :</label>
+        <select id="commandSelect">
+            <option value="L">L - Débarrer la boîte</option>
+            <option value="B">B - Faire sonner le buzzer</option>
+            <option value="C" selected>C - Demander un code secret</option>
+            <option value="T">T - Demander la température</option>
+			<option value="R">R - Lire l'état de la porte</option>
+			<option value="W">W - Modifier la couleur du DEL</option>
+        </select>
+
+        <div class="row">
+            <div>
+                <label for="arg1">Argument 1 :</label>
+                <input type="text" id="arg1" value="550" placeholder="Ex: 550">
+            </div>
+            <div>
+                <label for="arg2">Argument 2 :</label>
+                <input type="text" id="arg2" placeholder="Optionnel">
+            </div>
+        </div>
+
+        <button onclick="sendCommand()">Envoyer la commande</button>
+    </div>
+
+    <!-- Code Secret Reçu -->
+    <div class="card">
+        <h3 style="margin-top:0;">Code Secret :</h3>
+        <textarea id="secretCode" readonly></textarea>
+		<div id="timerDisplay">00:00</div>
+    </div>
+
+    <!-- Messages Reçus -->
+    <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3 style="margin: 0;">Messages Reçus</h3>
+            <button class="btn-secondary" style="width: auto; margin: 0; padding: 5px 10px; font-size: 12px;" onclick="clearMessages()">Effacer</button>
+        </div>
+        <div id="messages" style="margin-top: 10px;"></div>
+    </div>
+
+    <script>
+        // =====================================================
+        // MQTT CONFIGURATION
+        // =====================================================
+        const MQTT_HOST = "technophyscal.cloud.shiftr.io";
+        const MQTT_USERNAME = "technophyscal";
+        const MQTT_PASSWORD = "JBxhG3WAyeNT3BZk";
+        const MQTT_TOPIC = "iotSafeLock/prof";
+        const MQTT_PORT = 443;
+        const MQTT_PATH = '/';
+        const MQTT_SUBSCRIBE_TOPIC = "iotSafeLock/data";
+
+        const MAX_MESSAGES = 15;
+        let receivedMessages = [];
+        let mqttClient = null;
+        let countdownInterval = null;
+        let timeLeft = 60;
+
+        // =====================================================
+        // GESTION DE LA MINUTERIE (Décrémentation de 1s)
+        // =====================================================
+        function startTimer() {
+            clearInterval(countdownInterval);
+            timeLeft = 60; // Réinitialisation à 60 secondes
+
+            updateTimerDisplay(timeLeft);
+
+            countdownInterval = setInterval(() => {
+                if (timeLeft > 0) {
+                    timeLeft--;
+                    updateTimerDisplay(timeLeft);
+                }
+
+                if (timeLeft <= 0) {
+                    clearInterval(countdownInterval);
+                    document.getElementById("timerDisplay").innerText = "Time's up!";
+                }
+            }, 1000);
+        }
+
+        function updateTimerDisplay(seconds) {
+            const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
+            const secs = (seconds % 60).toString().padStart(2, '0');
+            document.getElementById("timerDisplay").innerText = `${mins}:${secs}`;
+        }
+
+        // =====================================================
+        // CONNECT TO MQTT BROKER
+        // =====================================================
+        function connectMQTT() {
+            document.getElementById("status").innerText = "Connexion en cours...";
+
+            const clientId = "webclient_" + Math.random().toString(16).substring(2);
+
+            mqttClient = new Paho.MQTT.Client(MQTT_HOST, Number(MQTT_PORT), MQTT_PATH, clientId);
+
+            mqttClient.onConnectionLost = function (responseObject) {
+                console.log("Connection lost:", responseObject.errorMessage);
+                document.getElementById("status").innerText = "Déconnecté";
+            };
+
+            mqttClient.onMessageArrived = function (message) {
+                const timestamp = new Date().toLocaleTimeString();
+                const messageEntry = "[" + timestamp + "] " + message.destinationName + "\n" + message.payloadString;
+
+                receivedMessages.push(messageEntry);
+                while (receivedMessages.length > MAX_MESSAGES) { 
+                    receivedMessages.shift();
+                } 
+                updateMessageDisplay();
+                
+                try {
+                    const data = typeof message.payloadString === 'string' ? JSON.parse(message.payloadString) : message.payloadString;
+
+                    // Vérifie si la propriété "secretCode" existe dans l'objet JSON reçu
+                    if (data && Object.prototype.hasOwnProperty.call(data, 'secretCode')) {
+                        const secretCode = data.secretCode;
+                        const elementCible = document.getElementById('secretCode');
+                        if (elementCible) {
+                            elementCible.value = secretCode;
+                            
+                            // DÉCLENCHE LE DÉCOMPTE À CHAQUE FOIS QU'UN CODE SECRET EST REÇU
+                            startTimer();
+                        }
+                    }
+                }
+                catch (error) {
+                    console.warn("Message non-JSON ou invalide reçu.", error);
+                }
+            };
+
+            const options = {
+                useSSL: true,
+                mqttVersion: 3,
+                userName: MQTT_USERNAME,
+                password: MQTT_PASSWORD,
+                onSuccess: function () {
+                    document.getElementById("status").innerText = "Connecté au broker MQTT";
+                    
+                    mqttClient.subscribe(MQTT_SUBSCRIBE_TOPIC, {
+                        qos: 0,
+                        onSuccess: function () {
+                            document.getElementById("status").innerText = "Connecté et abonné à " + MQTT_SUBSCRIBE_TOPIC;
+                            
+                            // Envoi du message de présence
+                            const confirmMsg = JSON.stringify({
+                                "recipient": "DeviceIoTLock", 
+                                "cmd": "I", 
+                                "replyTo": "iotSafeLock/data", 
+                                "arg1": clientId
+                            });
+                            const message = new Paho.MQTT.Message(confirmMsg);
+                            message.destinationName = MQTT_TOPIC;
+                            mqttClient.send(message);
+                        },
+                        onFailure: function (error) {
+                            console.error("Échec de l'abonnement:", error);
+                        }
+                    });
+                },
+                onFailure: function (error) {
+                    document.getElementById("status").innerText = "Échec de connexion : " + error.errorMessage;
+                }
+            };
+
+            mqttClient.connect(options);
+        }
+		
+        function updateMessageDisplay() {
+            const messages = document.getElementById("messages");
+            messages.innerText = receivedMessages.join("\n\n");
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        // =====================================================
+        // ENVOI DE LA COMMANDE
+        // =====================================================
+        function sendCommand() {
+            if (!mqttClient || !mqttClient.isConnected()) {
+                alert("Non connecté au broker MQTT.");
+                return;
+            }
+
+            const selectedCmd = document.getElementById("commandSelect").value;
+            const arg1Val = document.getElementById("arg1").value;
+            const arg2Val = document.getElementById("arg2").value;
+
+            // Construction de l'objet JSON dynamique selon les arguments fournis
+            const payload = {
+                "recipient": "DeviceIoTLock",
+                "cmd": selectedCmd,
+                "replyTo": "iotSafeLock/data"
+            };
+
+            if (arg1Val !== "") {
+                payload.arg1 = !isNaN(arg1Val) && arg1Val.trim() !== "" ? Number(arg1Val) : arg1Val;
+            }
+            if (arg2Val !== "") {
+                payload.arg2 = !isNaN(arg2Val) && arg2Val.trim() !== "" ? Number(arg2Val) : arg2Val;
+            }
+
+            const jsonString = JSON.stringify(payload);
+
+            const message = new Paho.MQTT.Message(jsonString);
+            message.destinationName = MQTT_TOPIC;
+            mqttClient.send(message);
+
+            document.getElementById("status").innerText = `Commande "${selectedCmd}" envoyée`;
+            console.log("Envoyé:", jsonString);
+        }
+		
+        function clearMessages() {
+            receivedMessages = [];
+            updateMessageDisplay();
+        }
+    </script>
+
+</body>
+</html>
